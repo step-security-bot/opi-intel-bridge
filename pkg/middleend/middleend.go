@@ -46,22 +46,13 @@ func NewServer(jsonRPC server.JSONRPC) *Server {
 
 // CreateEncryptedVolume creates an encrypted volume
 func (s *Server) CreateEncryptedVolume(_ context.Context, in *pb.CreateEncryptedVolumeRequest) (*pb.EncryptedVolume, error) {
-	defer func() {
-		if in != nil && in.EncryptedVolume != nil {
-			for i := range in.EncryptedVolume.Key {
-				in.EncryptedVolume.Key[i] = 0
-			}
-			in.EncryptedVolume.Cipher = pb.EncryptionType_ENCRYPTION_TYPE_UNSPECIFIED
-		}
-		// Run GC to free all variables which contained encryption keys
-		runtime.GC()
-		// Return allocated memory to OS, otherwise the memory which contained
-		// keys can be kept for some time.
-		debug.FreeOSMemory()
-	}()
-
-	err := verifyCreateEncryptedVolumeRequestArgs(in)
-	if err != nil {
+	log.Printf("CreateEncryptedVolume was called")
+	if in == nil {
+		log.Println("request cannot be empty")
+		return nil, errMissingArgument
+	}
+	defer cleanupEncryptedVolumeStruct(in.EncryptedVolume)
+	if err := verifyEncryptedVolume(in.EncryptedVolume); err != nil {
 		return nil, err
 	}
 
@@ -101,46 +92,6 @@ func (s *Server) CreateEncryptedVolume(_ context.Context, in *pb.CreateEncrypted
 	}, nil
 }
 
-func verifyCreateEncryptedVolumeRequestArgs(in *pb.CreateEncryptedVolumeRequest) error {
-	switch {
-	case in == nil:
-		log.Println("request cannot be empty")
-		return errMissingArgument
-	case in.EncryptedVolume == nil:
-		log.Println("encrypted_volume should be specified")
-		return errMissingArgument
-	case in.EncryptedVolume.EncryptedVolumeId == nil || in.EncryptedVolume.EncryptedVolumeId.Value == "":
-		log.Println("encrypted_volume_id should be specified")
-		return errMissingArgument
-	case in.EncryptedVolume.VolumeId == nil || in.EncryptedVolume.VolumeId.Value == "":
-		log.Println("volume_id should be specified")
-		return errMissingArgument
-	case len(in.EncryptedVolume.Key) == 0:
-		log.Println("key cannot be empty")
-		return errMissingArgument
-	}
-
-	keyLengthInBits := len(in.EncryptedVolume.Key) * 8
-	expectedKeyLengthInBits := 0
-	switch {
-	case in.EncryptedVolume.Cipher == pb.EncryptionType_ENCRYPTION_TYPE_AES_XTS_256:
-		expectedKeyLengthInBits = 512
-	case in.EncryptedVolume.Cipher == pb.EncryptionType_ENCRYPTION_TYPE_AES_XTS_128:
-		expectedKeyLengthInBits = 256
-	default:
-		log.Println("only AES_XTS_128 and AES_XTS_256 are supported")
-		return errNotSupportedCipher
-	}
-
-	if keyLengthInBits != expectedKeyLengthInBits {
-		log.Printf("expected key size %vb, provided size %vb",
-			expectedKeyLengthInBits, keyLengthInBits)
-		return errWrongKeySize
-	}
-
-	return nil
-}
-
 // DeleteEncryptedVolume deletes an encrypted volume
 func (s *Server) DeleteEncryptedVolume(_ context.Context, in *pb.DeleteEncryptedVolumeRequest) (*emptypb.Empty, error) {
 	log.Printf("DeleteEncryptedVolume: Received from client: %v", in)
@@ -175,6 +126,29 @@ func (s *Server) DeleteEncryptedVolume(_ context.Context, in *pb.DeleteEncrypted
 	return &emptypb.Empty{}, nil
 }
 
+// UpdateEncryptedVolume updates an encrypted volume
+func (s *Server) UpdateEncryptedVolume(ctx context.Context, in *pb.UpdateEncryptedVolumeRequest) (*pb.EncryptedVolume, error) {
+	log.Printf("UpdateEncryptedVolume was called")
+	if in == nil {
+		log.Println("request cannot be empty")
+		return nil, errMissingArgument
+	}
+	defer cleanupEncryptedVolumeStruct(in.EncryptedVolume)
+	if err := verifyEncryptedVolume(in.EncryptedVolume); err != nil {
+		return nil, err
+	}
+
+	if _, err := s.DeleteEncryptedVolume(ctx, &pb.DeleteEncryptedVolumeRequest{
+		Name: in.EncryptedVolume.VolumeId.Value,
+	}); err != nil {
+		return nil, err
+	}
+
+	return s.CreateEncryptedVolume(ctx, &pb.CreateEncryptedVolumeRequest{
+		EncryptedVolume: in.EncryptedVolume,
+	})
+}
+
 func (s *Server) getBdevUUIDByName(name string) (string, error) {
 	params := spdkmodels.BdevGetBdevsParams{Name: name}
 	var result []spdkmodels.BdevGetBdevsResult
@@ -188,4 +162,55 @@ func (s *Server) getBdevUUIDByName(name string) (string, error) {
 		return "", server.ErrUnexpectedSpdkCallResult
 	}
 	return result[0].UUID, nil
+}
+
+func verifyEncryptedVolume(volume *pb.EncryptedVolume) error {
+	switch {
+	case volume == nil:
+		log.Println("encrypted_volume should be specified")
+		return errMissingArgument
+	case volume.EncryptedVolumeId == nil || volume.EncryptedVolumeId.Value == "":
+		log.Println("encrypted_volume_id should be specified")
+		return errMissingArgument
+	case volume.VolumeId == nil || volume.VolumeId.Value == "":
+		log.Println("volume_id should be specified")
+		return errMissingArgument
+	case len(volume.Key) == 0:
+		log.Println("key cannot be empty")
+		return errMissingArgument
+	}
+
+	keyLengthInBits := len(volume.Key) * 8
+	expectedKeyLengthInBits := 0
+	switch {
+	case volume.Cipher == pb.EncryptionType_ENCRYPTION_TYPE_AES_XTS_256:
+		expectedKeyLengthInBits = 512
+	case volume.Cipher == pb.EncryptionType_ENCRYPTION_TYPE_AES_XTS_128:
+		expectedKeyLengthInBits = 256
+	default:
+		log.Println("only AES_XTS_128 and AES_XTS_256 are supported")
+		return errNotSupportedCipher
+	}
+
+	if keyLengthInBits != expectedKeyLengthInBits {
+		log.Printf("expected key size %vb, provided size %vb",
+			expectedKeyLengthInBits, keyLengthInBits)
+		return errWrongKeySize
+	}
+
+	return nil
+}
+
+func cleanupEncryptedVolumeStruct(volume *pb.EncryptedVolume) {
+	if volume != nil {
+		for i := range volume.Key {
+			volume.Key[i] = 0
+		}
+		volume.Cipher = pb.EncryptionType_ENCRYPTION_TYPE_UNSPECIFIED
+	}
+	// Run GC to free all variables which contained encryption keys
+	runtime.GC()
+	// Return allocated memory to OS, otherwise the memory which contained
+	// keys can be kept for some time.
+	debug.FreeOSMemory()
 }
