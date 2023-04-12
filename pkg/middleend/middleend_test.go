@@ -454,3 +454,294 @@ func TestMiddleEnd_DeleteEncryptedVolume(t *testing.T) {
 		})
 	}
 }
+
+func TestMiddleEnd_UpdateEncryptedVolume(t *testing.T) {
+	tests := map[string]struct {
+		in            *pb.UpdateEncryptedVolumeRequest
+		out           *pb.EncryptedVolume
+		spdk          []string
+		expectedInKey []byte
+		expectedErr   error
+		start         bool
+	}{
+		"nil request": {
+			in:            nil,
+			out:           nil,
+			spdk:          []string{},
+			expectedInKey: nil,
+			expectedErr:   errMissingArgument,
+			start:         false,
+		},
+		"nil EncryptedVolume": {
+			in:            &pb.UpdateEncryptedVolumeRequest{EncryptedVolume: nil},
+			out:           nil,
+			spdk:          []string{},
+			expectedInKey: nil,
+			expectedErr:   errMissingArgument,
+			start:         false,
+		},
+		"nil EncryptedVolumeId": {
+			in: &pb.UpdateEncryptedVolumeRequest{EncryptedVolume: &pb.EncryptedVolume{
+				VolumeId: encryptedVolumeAesXts256.EncryptedVolumeId,
+				Key:      encryptedVolumeAesXts256.Key,
+				Cipher:   pb.EncryptionType_ENCRYPTION_TYPE_AES_XTS_256,
+			}},
+			out:           nil,
+			spdk:          []string{},
+			expectedInKey: make([]byte, len(encryptedVolumeAesXts256.Key)),
+			expectedErr:   errMissingArgument,
+			start:         false,
+		},
+		"empty EncryptedVolumeId": {
+			in: &pb.UpdateEncryptedVolumeRequest{EncryptedVolume: &pb.EncryptedVolume{
+				EncryptedVolumeId: &pc.ObjectKey{Value: ""},
+				VolumeId:          encryptedVolumeAesXts256.EncryptedVolumeId,
+				Key:               encryptedVolumeAesXts256.Key,
+				Cipher:            pb.EncryptionType_ENCRYPTION_TYPE_AES_XTS_256,
+			}},
+			out:           nil,
+			spdk:          []string{},
+			expectedInKey: make([]byte, len(encryptedVolumeAesXts256.Key)),
+			expectedErr:   errMissingArgument,
+			start:         false,
+		},
+		"empty Key": {
+			in: &pb.UpdateEncryptedVolumeRequest{EncryptedVolume: &pb.EncryptedVolume{
+				EncryptedVolumeId: encryptedVolumeAesXts256.EncryptedVolumeId,
+				VolumeId:          encryptedVolumeAesXts256.VolumeId,
+				Cipher:            pb.EncryptionType_ENCRYPTION_TYPE_AES_XTS_256,
+				Key:               make([]byte, 0),
+			}},
+			out:           nil,
+			spdk:          []string{},
+			expectedInKey: nil,
+			expectedErr:   errMissingArgument,
+			start:         false,
+		},
+		"nil VolumeId": {
+			in: &pb.UpdateEncryptedVolumeRequest{EncryptedVolume: &pb.EncryptedVolume{
+				EncryptedVolumeId: encryptedVolumeAesXts256.EncryptedVolumeId,
+				Key:               encryptedVolumeAesXts256.Key,
+				Cipher:            pb.EncryptionType_ENCRYPTION_TYPE_AES_XTS_256,
+			}},
+			out:           nil,
+			spdk:          []string{},
+			expectedInKey: make([]byte, len(encryptedVolumeAesXts256.Key)),
+			expectedErr:   errMissingArgument,
+			start:         false,
+		},
+		"empty VolumeId": {
+			in: &pb.UpdateEncryptedVolumeRequest{EncryptedVolume: &pb.EncryptedVolume{
+				EncryptedVolumeId: encryptedVolumeAesXts256.EncryptedVolumeId,
+				VolumeId:          &pc.ObjectKey{Value: ""},
+				Key:               encryptedVolumeAesXts256.Key,
+				Cipher:            pb.EncryptionType_ENCRYPTION_TYPE_AES_XTS_256,
+			}},
+			out:           nil,
+			spdk:          []string{},
+			expectedInKey: make([]byte, len(encryptedVolumeAesXts256.Key)),
+			expectedErr:   errMissingArgument,
+			start:         false,
+		},
+		"update encrypted volume request with AES_XTS_128": {
+			in:  &pb.UpdateEncryptedVolumeRequest{EncryptedVolume: &encryptedVolumeAesXts128},
+			out: &encryptedVolumeAesXts128InResponse,
+			spdk: []string{
+				foundBdevResponse, `{"id":%d,"error":{"code":0,"message":""},"result":true}`,
+				foundBdevResponse, `{"id":%d,"error":{"code":0,"message":""},"result":true}`},
+			expectedInKey: make([]byte, len(encryptedVolumeAesXts128.Key)),
+			expectedErr:   nil,
+			start:         true,
+		},
+		"update encrypted volume request with AES_XTS_192": {
+			in:            &pb.UpdateEncryptedVolumeRequest{EncryptedVolume: &encryptedVolumeAesXts192},
+			out:           nil,
+			spdk:          []string{},
+			expectedInKey: make([]byte, len(encryptedVolumeAesXts192.Key)),
+			expectedErr:   errNotSupportedCipher,
+			start:         false,
+		},
+		"update encrypted volume request with AES_XTS_256": {
+			in:  &pb.UpdateEncryptedVolumeRequest{EncryptedVolume: &encryptedVolumeAesXts256},
+			out: &encryptedVolumeAesXts256InResponse,
+			spdk: []string{
+				foundBdevResponse, `{"id":%d,"error":{"code":0,"message":""},"result":true}`,
+				foundBdevResponse, `{"id":%d,"error":{"code":0,"message":""},"result":true}`},
+			expectedInKey: make([]byte, len(encryptedVolumeAesXts256.Key)),
+			expectedErr:   nil,
+			start:         true,
+		},
+		"update encrypted volume request with AES_CBC_128": {
+			in:            &pb.UpdateEncryptedVolumeRequest{EncryptedVolume: &encryptedVolumeAesCbc128},
+			out:           nil,
+			spdk:          []string{},
+			expectedInKey: make([]byte, len(encryptedVolumeAesCbc128.Key)),
+			expectedErr:   errNotSupportedCipher,
+			start:         false,
+		},
+		"update encrypted volume request with AES_CBC_192": {
+			in:            &pb.UpdateEncryptedVolumeRequest{EncryptedVolume: &encryptedVolumeAesCbc192},
+			out:           nil,
+			spdk:          []string{},
+			expectedInKey: make([]byte, len(encryptedVolumeAesCbc192.Key)),
+			expectedErr:   errNotSupportedCipher,
+			start:         false,
+		},
+		"update encrypted volume request with AES_CBC_256": {
+			in:            &pb.UpdateEncryptedVolumeRequest{EncryptedVolume: &encryptedVolumeAesCbc256},
+			out:           nil,
+			spdk:          []string{},
+			expectedInKey: make([]byte, len(encryptedVolumeAesCbc256.Key)),
+			expectedErr:   errNotSupportedCipher,
+			start:         false,
+		},
+		"use UNSPECIFIED cipher": {
+			in: &pb.UpdateEncryptedVolumeRequest{EncryptedVolume: &pb.EncryptedVolume{
+				EncryptedVolumeId: encryptedVolumeAesXts256.EncryptedVolumeId,
+				VolumeId:          encryptedVolumeAesXts256.VolumeId,
+				Key:               encryptedVolumeAesXts256.Key,
+				Cipher:            pb.EncryptionType_ENCRYPTION_TYPE_UNSPECIFIED,
+			}},
+			out:           nil,
+			spdk:          []string{},
+			expectedInKey: make([]byte, len(encryptedVolumeAesXts256.Key)),
+			expectedErr:   errNotSupportedCipher,
+			start:         false,
+		},
+		"key of wrong size for AEX_XTS_256": {
+			in: &pb.UpdateEncryptedVolumeRequest{EncryptedVolume: &pb.EncryptedVolume{
+				EncryptedVolumeId: encryptedVolumeAesXts256.EncryptedVolumeId,
+				VolumeId:          encryptedVolumeAesXts256.VolumeId,
+				Key:               []byte("1234"),
+				Cipher:            pb.EncryptionType_ENCRYPTION_TYPE_AES_XTS_256,
+			}},
+			out:           nil,
+			spdk:          []string{},
+			expectedInKey: make([]byte, 4),
+			expectedErr:   errWrongKeySize,
+			start:         false,
+		},
+		"key of wrong size for AEX_XTS_128": {
+			in: &pb.UpdateEncryptedVolumeRequest{EncryptedVolume: &pb.EncryptedVolume{
+				EncryptedVolumeId: encryptedVolumeAesXts128.EncryptedVolumeId,
+				VolumeId:          encryptedVolumeAesXts128.VolumeId,
+				Key:               []byte("1234"),
+				Cipher:            encryptedVolumeAesXts128.Cipher,
+			}},
+			out:           nil,
+			spdk:          []string{},
+			expectedInKey: make([]byte, 4),
+			expectedErr:   errWrongKeySize,
+			start:         false,
+		},
+		"find bdev uuid by name internal SPDK failure at delete": {
+			in:            &pb.UpdateEncryptedVolumeRequest{EncryptedVolume: &encryptedVolumeAesXts256},
+			out:           nil,
+			spdk:          []string{`{"id":%d,"error":{"code":-19,"message":"No such device"},"result":null}`},
+			expectedInKey: make([]byte, len(encryptedVolumeAesXts256.Key)),
+			expectedErr:   server.ErrFailedSpdkCall,
+			start:         true,
+		},
+		"find no bdev uuid by name at delete": {
+			in:            &pb.UpdateEncryptedVolumeRequest{EncryptedVolume: &encryptedVolumeAesXts256},
+			out:           nil,
+			spdk:          []string{`{"id":%d,"error":{"code":0,"message":""},"result":[]}`},
+			expectedInKey: make([]byte, len(encryptedVolumeAesXts256.Key)),
+			expectedErr:   server.ErrUnexpectedSpdkCallResult,
+			start:         true,
+		},
+		"internal SPDK failure at delete": {
+			in:            &pb.UpdateEncryptedVolumeRequest{EncryptedVolume: &encryptedVolumeAesXts256},
+			out:           nil,
+			spdk:          []string{foundBdevResponse, `{"id":%d,"error":{"code":1,"message":"some internal error"},"result":true}`},
+			expectedInKey: make([]byte, len(encryptedVolumeAesXts256.Key)),
+			expectedErr:   server.ErrFailedSpdkCall,
+			start:         true,
+		},
+		"SPDK result false at delete": {
+			in:            &pb.UpdateEncryptedVolumeRequest{EncryptedVolume: &encryptedVolumeAesXts256},
+			out:           nil,
+			spdk:          []string{foundBdevResponse, `{"id":%d,"error":{"code":0,"message":""},"result":false}`},
+			expectedInKey: make([]byte, len(encryptedVolumeAesXts256.Key)),
+			expectedErr:   server.ErrUnexpectedSpdkCallResult,
+			start:         true,
+		},
+
+		"find bdev uuid by name internal SPDK failure at create": {
+			in:  &pb.UpdateEncryptedVolumeRequest{EncryptedVolume: &encryptedVolumeAesXts256},
+			out: nil,
+			spdk: []string{
+				foundBdevResponse, `{"id":%d,"error":{"code":0,"message":""},"result":true}`,
+				`{"id":%d,"error":{"code":-19,"message":"No such device"},"result":null}`},
+			expectedInKey: make([]byte, len(encryptedVolumeAesXts256.Key)),
+			expectedErr:   server.ErrFailedSpdkCall,
+			start:         true,
+		},
+		"find no bdev uuid by name at create": {
+			in:  &pb.UpdateEncryptedVolumeRequest{EncryptedVolume: &encryptedVolumeAesXts256},
+			out: nil,
+			spdk: []string{
+				foundBdevResponse, `{"id":%d,"error":{"code":0,"message":""},"result":true}`,
+				`{"id":%d,"error":{"code":0,"message":""},"result":[]}`},
+			expectedInKey: make([]byte, len(encryptedVolumeAesXts256.Key)),
+			expectedErr:   server.ErrUnexpectedSpdkCallResult,
+			start:         true,
+		},
+		"internal SPDK failure at create": {
+			in:  &pb.UpdateEncryptedVolumeRequest{EncryptedVolume: &encryptedVolumeAesXts256},
+			out: nil,
+			spdk: []string{
+				foundBdevResponse, `{"id":%d,"error":{"code":0,"message":""},"result":true}`,
+				foundBdevResponse, `{"id":%d,"error":{"code":1,"message":"some internal error"},"result":true}`},
+			expectedInKey: make([]byte, len(encryptedVolumeAesXts256.Key)),
+			expectedErr:   server.ErrFailedSpdkCall,
+			start:         true,
+		},
+		"SPDK result false at create": {
+			in:  &pb.UpdateEncryptedVolumeRequest{EncryptedVolume: &encryptedVolumeAesXts256},
+			out: nil,
+			spdk: []string{
+				foundBdevResponse, `{"id":%d,"error":{"code":0,"message":""},"result":true}`,
+				foundBdevResponse, `{"id":%d,"error":{"code":0,"message":""},"result":false}`},
+			expectedInKey: make([]byte, len(encryptedVolumeAesXts256.Key)),
+			expectedErr:   server.ErrUnexpectedSpdkCallResult,
+			start:         true,
+		},
+	}
+
+	for testName, test := range tests {
+		t.Run(testName, func(t *testing.T) {
+			testEnv := createTestEnvironment(test.start, test.spdk)
+			defer testEnv.Close()
+			var request *pb.UpdateEncryptedVolumeRequest
+			if test.in != nil {
+				var ok bool
+				// make a copy to prevent key overwriting in the original structures
+				request, ok = proto.Clone(test.in).(*pb.UpdateEncryptedVolumeRequest)
+				if !ok {
+					log.Panic("Failed to copy test structure for CreateEncryptedVolumeRequest")
+				}
+			}
+
+			response, err := testEnv.opiSpdkServer.UpdateEncryptedVolume(testEnv.ctx, request)
+			wantOut, _ := proto.Marshal(test.out)
+			gotOut, _ := proto.Marshal(response)
+			if !bytes.Equal(wantOut, gotOut) {
+				t.Error("response: expected", test.out, "received", response)
+			}
+			if err != test.expectedErr {
+				t.Error("error: expected", test.expectedErr, "received", err)
+			}
+			if request != nil && request.EncryptedVolume != nil {
+				if !bytes.Equal(request.EncryptedVolume.Key, test.expectedInKey) {
+					t.Error("input key after operation expected",
+						test.expectedInKey, "received", request.EncryptedVolume.Key)
+				}
+				if request.EncryptedVolume.Cipher != pb.EncryptionType_ENCRYPTION_TYPE_UNSPECIFIED {
+					t.Error("Expect in cipher set to EncryptionType_ENCRYPTION_TYPE_UNSPECIFIED, received",
+						request.EncryptedVolume.Cipher)
+				}
+			}
+		})
+	}
+}
