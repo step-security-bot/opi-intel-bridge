@@ -503,7 +503,7 @@ func TestFrontEnd_CreateNvmeController(t *testing.T) {
 				test.out.Spec.Name = testControllerID
 			}
 
-			response, err := testEnv.opiSpdkServer.CreateNvmeController(testEnv.ctx,
+			response, err := testEnv.client.CreateNvmeController(testEnv.ctx,
 				&pb.CreateNvmeControllerRequest{
 					NvmeController:   test.in,
 					NvmeControllerId: testControllerID})
@@ -532,7 +532,7 @@ func TestFrontEnd_CreateNvmeController(t *testing.T) {
 				}
 			} else {
 				if test.errCode == codes.OK {
-					if !proto.Equal(test.in, controller) {
+					if !proto.Equal(response, controller) {
 						t.Errorf("expect %v exists", test.in)
 					}
 				} else {
@@ -872,7 +872,7 @@ func TestFrontEnd_UpdateNvmeController(t *testing.T) {
 				testEnv.opiSpdkServer.nvme.Controllers[test.existingController.Spec.Name] = test.existingController
 			}
 
-			response, err := testEnv.opiSpdkServer.UpdateNvmeController(testEnv.ctx,
+			response, err := testEnv.client.UpdateNvmeController(testEnv.ctx,
 				&pb.UpdateNvmeControllerRequest{NvmeController: test.in})
 
 			marshalledOut, _ := proto.Marshal(test.out)
@@ -894,8 +894,8 @@ func TestFrontEnd_UpdateNvmeController(t *testing.T) {
 
 			controller := testEnv.opiSpdkServer.nvme.Controllers[test.in.Spec.Name]
 			if test.errCode == codes.OK {
-				if !proto.Equal(test.in, controller) {
-					t.Errorf("expect new %v exists, found %v", test.in, controller)
+				if !proto.Equal(response, controller) {
+					t.Errorf("expect new %v exists, found %v", response, controller)
 				}
 			} else {
 				if !proto.Equal(test.existingController, controller) {

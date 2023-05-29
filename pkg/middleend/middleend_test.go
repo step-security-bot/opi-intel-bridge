@@ -374,7 +374,7 @@ func TestMiddleEnd_CreateEncryptedVolume(t *testing.T) {
 					test.in.EncryptedVolume.VolumeId.Value
 			}
 
-			response, err := testEnv.opiSpdkServer.CreateEncryptedVolume(testEnv.ctx, test.in)
+			response, err := testEnv.client.CreateEncryptedVolume(testEnv.ctx, test.in)
 
 			wantOut, _ := proto.Marshal(test.out)
 			gotOut, _ := proto.Marshal(response)
@@ -483,7 +483,7 @@ func TestMiddleEnd_DeleteEncryptedVolume(t *testing.T) {
 				testEnv.opiSpdkServer.volumes.encryptedVolumes[test.in.Name] = bdevName
 			}
 
-			_, err := testEnv.opiSpdkServer.DeleteEncryptedVolume(testEnv.ctx, test.in)
+			_, err := testEnv.client.DeleteEncryptedVolume(testEnv.ctx, test.in)
 
 			if err != test.expectedErr {
 				t.Error("error: expected", test.expectedErr, "received", err)
