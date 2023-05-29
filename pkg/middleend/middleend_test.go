@@ -15,6 +15,7 @@ import (
 	"github.com/opiproject/gospdk/spdk"
 	pc "github.com/opiproject/opi-api/common/v1/gen/go"
 	pb "github.com/opiproject/opi-api/storage/v1alpha1/gen/go"
+	"github.com/opiproject/opi-intel-bridge/pkg/utils"
 	"github.com/opiproject/opi-spdk-bridge/pkg/server"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -360,26 +361,20 @@ func TestMiddleEnd_CreateEncryptedVolume(t *testing.T) {
 
 	for testName, test := range tests {
 		t.Run(testName, func(t *testing.T) {
+			test.in = utils.ProtoClone(test.in)
+			test.out = utils.ProtoClone(test.out)
+
 			testEnv := createTestEnvironment(test.start, test.spdk)
 			defer testEnv.Close()
-			var request *pb.CreateEncryptedVolumeRequest
-			if test.in != nil {
-				var ok bool
-				// make a copy to prevent key overwriting in the original structures
-				request, ok = proto.Clone(test.in).(*pb.CreateEncryptedVolumeRequest)
-				if !ok {
-					log.Panic("Failed to copy test structure for CreateEncryptedVolumeRequest")
-				}
-			}
 			if test.out != nil {
 				test.out.Name = encryptedVolumeID
 			}
 			if test.existBefore {
 				testEnv.opiSpdkServer.volumes.encryptedVolumes[encryptedVolumeID] =
-					request.EncryptedVolume.VolumeId.Value
+					test.in.EncryptedVolume.VolumeId.Value
 			}
 
-			response, err := testEnv.opiSpdkServer.CreateEncryptedVolume(testEnv.ctx, request)
+			response, err := testEnv.opiSpdkServer.CreateEncryptedVolume(testEnv.ctx, test.in)
 
 			wantOut, _ := proto.Marshal(test.out)
 			gotOut, _ := proto.Marshal(response)
@@ -389,14 +384,14 @@ func TestMiddleEnd_CreateEncryptedVolume(t *testing.T) {
 			if err != test.expectedErr {
 				t.Error("error: expected", test.expectedErr, "received", err)
 			}
-			if request != nil && request.EncryptedVolume != nil {
-				if !bytes.Equal(request.EncryptedVolume.Key, test.expectedInKey) {
+			if test.in != nil && test.in.EncryptedVolume != nil {
+				if !bytes.Equal(test.in.EncryptedVolume.Key, test.expectedInKey) {
 					t.Error("input key after operation expected",
-						test.expectedInKey, "received", request.EncryptedVolume.Key)
+						test.expectedInKey, "received", test.in.EncryptedVolume.Key)
 				}
-				if request.EncryptedVolume.Cipher != pb.EncryptionType_ENCRYPTION_TYPE_UNSPECIFIED {
+				if test.in.EncryptedVolume.Cipher != pb.EncryptionType_ENCRYPTION_TYPE_UNSPECIFIED {
 					t.Error("Expect in cipher set to EncryptionType_ENCRYPTION_TYPE_UNSPECIFIED, received",
-						request.EncryptedVolume.Cipher)
+						test.in.EncryptedVolume.Cipher)
 				}
 			}
 		})
@@ -480,14 +475,15 @@ func TestMiddleEnd_DeleteEncryptedVolume(t *testing.T) {
 
 	for testName, test := range tests {
 		t.Run(testName, func(t *testing.T) {
+			test.in = utils.ProtoClone(test.in)
+
 			testEnv := createTestEnvironment(test.start, test.spdk)
 			defer testEnv.Close()
 			if test.existBefore {
 				testEnv.opiSpdkServer.volumes.encryptedVolumes[test.in.Name] = bdevName
 			}
-			request := proto.Clone(test.in).(*pb.DeleteEncryptedVolumeRequest)
 
-			_, err := testEnv.opiSpdkServer.DeleteEncryptedVolume(testEnv.ctx, request)
+			_, err := testEnv.opiSpdkServer.DeleteEncryptedVolume(testEnv.ctx, test.in)
 
 			if err != test.expectedErr {
 				t.Error("error: expected", test.expectedErr, "received", err)

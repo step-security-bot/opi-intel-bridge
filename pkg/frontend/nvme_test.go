@@ -12,6 +12,7 @@ import (
 	"github.com/opiproject/gospdk/spdk"
 	pc "github.com/opiproject/opi-api/common/v1/gen/go"
 	pb "github.com/opiproject/opi-api/storage/v1alpha1/gen/go"
+	"github.com/opiproject/opi-intel-bridge/pkg/utils"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -486,12 +487,17 @@ func TestFrontEnd_CreateNvmeController(t *testing.T) {
 
 	for testName, test := range tests {
 		t.Run(testName, func(t *testing.T) {
+			test.in = utils.ProtoClone(test.in)
+			test.out = utils.ProtoClone(test.out)
+			test.existingController = utils.ProtoClone(test.existingController)
+			testSubsystem := utils.ProtoClone(&testSubsystem)
+
 			testEnv := createTestEnvironment(test.start, test.spdk)
 			defer testEnv.Close()
-			testEnv.opiSpdkServer.nvme.Subsystems[testSubsystem.Spec.Name] = &testSubsystem
+			testEnv.opiSpdkServer.nvme.Subsystems[testSubsystem.Spec.Name] = testSubsystem
 			if test.existingController != nil {
 				test.existingController.Spec.Name = testControllerID
-				testEnv.opiSpdkServer.nvme.Controllers[test.existingController.Spec.Name] = test.existingController
+				testEnv.opiSpdkServer.nvme.Controllers[testControllerID] = test.existingController
 			}
 			if test.out != nil {
 				test.out.Spec.Name = testControllerID
@@ -853,9 +859,14 @@ func TestFrontEnd_UpdateNvmeController(t *testing.T) {
 
 	for testName, test := range tests {
 		t.Run(testName, func(t *testing.T) {
+			test.in = utils.ProtoClone(test.in)
+			test.out = utils.ProtoClone(test.out)
+			test.existingController = utils.ProtoClone(test.existingController)
+			testSubsystem := utils.ProtoClone(&testSubsystem)
+
 			testEnv := createTestEnvironment(test.start, test.spdk)
 			defer testEnv.Close()
-			testEnv.opiSpdkServer.nvme.Subsystems[testSubsystem.Spec.Name] = &testSubsystem
+			testEnv.opiSpdkServer.nvme.Subsystems[testSubsystem.Spec.Name] = testSubsystem
 			if test.existingController != nil {
 				test.existingController.Spec.Name = testControllerID
 				testEnv.opiSpdkServer.nvme.Controllers[test.existingController.Spec.Name] = test.existingController
