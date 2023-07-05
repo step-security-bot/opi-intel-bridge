@@ -13,38 +13,70 @@
 
 ----
 
-This is a Intel app (bridge) to OPI APIs for storage, inventory, ipsec and networking (future).
+This is an Intel bridge to OPI APIs. Currently it supports storage APIs and is subject to extension for other domains including inventory, ipsec and networking.
+The intel-opi-bridge (further bridge) acts as a gRPC server for xPU management and configuration.
 
-## Getting started
+The diagram below illustrates main system components of an exemplary NVMe-oF initiator deployment. The bridge (in blue) runs on an xPU and translates OPI API commands to appropriate sequences of Intel SDK instructions. Ultimately, two emulated NVMe storage devices are exposed to the host. These devices are backed by an "over Fabrics"-connection to some remote storage backends while the host has an illusion of accessing locally attached storage and can run standard/unmodified apps/drivers to access it.
 
-build like this:
+![opi-intel-bridge system overview](doc/images/opi-intel-bridge_system-overview.png "opi-intel-bridge system overview")\
+*Fig. 1 - System components in NVMe-oF scenario*
+
+## Quickstart
+
+This section outlines the basic steps to get you up-and-running with the bridge and shows some examples of its usage to expose storage devices to the host, set bandwidth/rate limiters on them or enable data-at-rest crypto. The steps are mainly executed as gRPC commands to the bridge but may also involve some host-side interactions or initial xPU-side setup.
+
+> **Note** \
+It is assumed that Intel IPU is already properly set up to be used with Intel OPI bridge.
+
+The following variables are used throughout this document:
+
+| Variable    | Description                                                                                                                                      |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| BRIDGE_IP   | opi-intel-bridge gRPC listening IP address e.g. 10.10.10.10 or localhost                                                                         |
+| BRIDGE_PORT | opi-intel-bridge gRPC listening port e.g. 50051                                                                                                  |
+| BRIDGE_ADDR | BRIDGE_IP:BRIDGE_PORT                                                                                                                            |
+| PF_BDF      | physical function PCI address e.g. 0000:3b:00.1                                                                                                  |
+| VF_BDF      | virtual function PCI address e.g. 0000:40:00.0 can be found in pf's virtfn\<X\> where X equals to virtual_function in CreateNvmeController minus 1 |
+| TARGET_IP   | storage target ip address                                                                                                                        |
+| TARGET_PORT | storage target port                                                                                                                              |
+
+### Build and import
+
+To build the solution execute
 
 ```bash
 go build -v -o /opi-intel-bridge ./cmd/...
 ```
 
-import like this:
+To import the bridge within another go package or module use
 
 ```go
 import "github.com/opiproject/opi-intel-bridge/pkg/frontend"
+import "github.com/opiproject/opi-intel-bridge/pkg/middleend"
 ```
 
-## Using docker
+### Usage
 
-on DPU/IPU (i.e. with IP=10.10.10.1) run
+On xPU run
 
 ```bash
-$ docker run --rm -it -v /var/tmp/:/var/tmp/ -p 50051:50051 ghcr.io/opiproject/opi-intel-bridge:main
-2022/11/29 00:03:55 plugin serevr is &{{}}
-2022/11/29 00:03:55 server listening at [::]:50051
+$ docker run --rm -it -v /var/tmp/:/var/tmp/ -p $BRIDGE_PORT:$BRIDGE_PORT ghcr.io/opiproject/opi-intel-bridge:main
+
+2023/07/03 11:04:30 Connection to SPDK will be via: unix detected from /var/tmp/spdk.sock
+2023/07/03 11:04:30 server listening at [::]:50051
 ```
 
-on X86 management VM run
-
-reflection
+To send commands to the bridge, grpc_cli tool is used. It can be used as a containerized or a native version. If containerized version is preferable, then an alias can be defined as follows
 
 ```bash
-$ docker run --network=host --rm -it namely/grpc-cli ls --json_input --json_output localhost:50051
+alias grpc_cli="docker run --network=host --rm -it namely/grpc-cli"
+```
+
+On management machine run below command to check bridge availability and reflection capabilities
+
+```bash
+$ grpc_cli ls --json_input --json_output $BRIDGE_ADDR
+
 grpc.reflection.v1alpha.ServerReflection
 opi_api.inventory.v1.InventorySvc
 opi_api.security.v1.IPsec
@@ -58,181 +90,101 @@ opi_api.storage.v1.NVMfRemoteControllerService
 opi_api.storage.v1.NullDebugService
 ```
 
-full test suite
+or specify commands manually
 
 ```bash
-docker run --rm -it --network=host docker.io/opiproject/godpu:main get --addr="10.10.10.10:50051"
-docker run --rm -it --network=host docker.io/opiproject/godpu:main storagetest --addr="10.10.10.10:50051"
-docker run --rm -it --network=host docker.io/opiproject/godpu:main test --addr=10.10.10.10:50151 --pingaddr=8.8.8.1"
+# PF creation
+grpc_cli call --json_input --json_output $BRIDGE_ADDR CreateNvmeSubsystem "{nvme_subsystem : {spec : {nqn: 'nqn.2022-09.io.spdk:opitest2', serial_number: 'myserial2', model_number: 'mymodel2', max_namespaces: 11} }, nvme_subsystem_id : 'subsystem2' }"
+grpc_cli call --json_input --json_output $BRIDGE_ADDR ListNvmeSubsystems "{parent : 'todo'}"
+grpc_cli call --json_input --json_output $BRIDGE_ADDR GetNvmeSubsystem "{name : '//storage.opiproject.org/volumes/subsystem2'}"
+grpc_cli call --json_input --json_output $BRIDGE_ADDR CreateNvmeController "{nvme_controller : {spec : {nvme_controller_id: 2, subsystem_id : { value : '//storage.opiproject.org/volumes/subsystem2' }, pcie_id : {physical_function : 0}, max_nsq:5, max_ncq:5 } }, nvme_controller_id : 'controller1'}"
+grpc_cli call --json_input --json_output $BRIDGE_ADDR ListNvmeControllers "{parent : '//storage.opiproject.org/volumes/subsystem2'}"
+grpc_cli call --json_input --json_output $BRIDGE_ADDR GetNvmeController "{name : '//storage.opiproject.org/volumes/controller1'}"
+
+# VF creation on PF0
+grpc_cli call --json_input --json_output $BRIDGE_ADDR CreateNvmeSubsystem "{nvme_subsystem : {spec : {nqn: 'nqn.2022-09.io.spdk:opitest3', serial_number: 'mev-opi-serial', model_number: 'mev-opi-model', max_namespaces: 11} }, nvme_subsystem_id : 'subsystem03' }"
+grpc_cli call --json_input --json_output $BRIDGE_ADDR CreateNvmeController "{nvme_controller : {spec : {nvme_controller_id: 2, subsystem_id : { value : '//storage.opiproject.org/volumes/subsystem03' }, pcie_id : {physical_function : 0, virtual_function : 3}, max_nsq:5, max_ncq:5 } }, nvme_controller_id : 'controller3'}"
+
+# Connect to storage-target
+grpc_cli call --json_input --json_output $BRIDGE_ADDR CreateNVMfRemoteController "{nv_mf_remote_controller : {multipath: 'NVME_MULTIPATH_MULTIPATH'}, nv_mf_remote_controller_id: 'nvmetcp12'}"
+grpc_cli call --json_input --json_output $BRIDGE_ADDR ListNVMfRemoteControllers "{}"
+grpc_cli call --json_input --json_output $BRIDGE_ADDR GetNVMfRemoteController "{name: '//storage.opiproject.org/volumes/nvmetcp12'}"
+grpc_cli call --json_input --json_output $BRIDGE_ADDR CreateNVMfPath "{nv_mf_path : {controller_id: {value: '//storage.opiproject.org/volumes/nvmetcp12'}, traddr:'11.11.11.2', subnqn:'nqn.2016-06.com.opi.spdk.target0', trsvcid:'4444', trtype:'NVME_TRANSPORT_TCP', adrfam:'NVMF_ADRFAM_IPV4', hostnqn:'nqn.2014-08.org.nvmexpress:uuid:feb98abe-d51f-40c8-b348-2753f3571d3c'}, nv_mf_path_id: 'nvmetcp12path0'}"
+grpc_cli call --json_input --json_output $BRIDGE_ADDR ListNVMfPaths "{parent : 'todo'}"
+grpc_cli call --json_input --json_output $BRIDGE_ADDR GetNVMfPath "{name: '//storage.opiproject.org/volumes/nvmetcp12path0'}"
+
+# Create QoS volume
+grpc_cli call --json_input --json_output $BRIDGE_ADDR CreateQosVolume "{'qos_volume' : {'volume_id' : { 'value':'nvmetcp12n1'}, 'max_limit' : { 'rw_iops_kiops': 3 } }, 'qos_volume_id' : 'qosnvmetcp12n1' }"
+
+# Create encrypted volume
+grpc_cli call --json_input --json_output $BRIDGE_ADDR CreateEncryptedVolume "{'encrypted_volume': { 'cipher': 'ENCRYPTION_TYPE_AES_XTS_128', 'volume_id': { 'value': 'nvmetcp12n1'}, 'key': 'MDAwMTAyMDMwNDA1MDYwNzA4MDkwYTBiMGMwZDBlMGY='}, 'encrypted_volume_id': 'encnvmetcp12n1' }"
+
+# Create namespace
+grpc_cli call --json_input --json_output $BRIDGE_ADDR CreateNvmeNamespace "{nvme_namespace : {spec : {subsystem_id : { value : '//storage.opiproject.org/volumes/subsystem2' }, volume_id : { value : 'nvmetcp12n1' }, 'host_nsid' : '10', uuid:{value : '1b4e28ba-2fa1-11d2-883f-b9a761bde3fb'}, nguid: '1b4e28ba-2fa1-11d2-883f-b9a761bde3fb', eui64: 1967554867335598546 } }, nvme_namespace_id: 'namespace1'}"
+grpc_cli call --json_input --json_output $BRIDGE_ADDR ListNvmeNamespaces "{parent : '//storage.opiproject.org/volumes/subsystem2'}"
+grpc_cli call --json_input --json_output $BRIDGE_ADDR GetNvmeNamespace "{name : '//storage.opiproject.org/volumes/namespace1'}"
+grpc_cli call --json_input --json_output $BRIDGE_ADDR NvmeNamespaceStats "{namespace_id : {value : '//storage.opiproject.org/volumes/namespace1'} }"
+
+# Delete namespace
+grpc_cli call --json_input --json_output $BRIDGE_ADDR DeleteNvmeNamespace "{name : '//storage.opiproject.org/volumes/namespace1'}"
+
+# Delete encrypted volume
+grpc_cli call --json_input --json_output $BRIDGE_ADDR DeleteEncryptedVolume "{'name': '//storage.opiproject.org/volumes/encnvmetcp12n1'}"
+
+# Delete QoS volume
+grpc_cli call --json_input --json_output $BRIDGE_ADDR DeleteQosVolume "{name : '//storage.opiproject.org/volumes/qosnvmetcp12n1'}"
+
+# Disconnect from storage-target
+grpc_cli call --json_input --json_output $BRIDGE_ADDR DeleteNVMfPath "{name: '//storage.opiproject.org/volumes/nvmetcp12path0'}"
+grpc_cli call --json_input --json_output $BRIDGE_ADDR DeleteNVMfRemoteController "{name: '//storage.opiproject.org/volumes/nvmetcp12'}"
+
+# Delete VF
+grpc_cli call --json_input --json_output $BRIDGE_ADDR DeleteNvmeController "{name : '//storage.opiproject.org/volumes/controller3'}"
+grpc_cli call --json_input --json_output $BRIDGE_ADDR DeleteNvmeSubsystem "{name : '//storage.opiproject.org/volumes/subsystem03'}"
+
+# Delete PF
+grpc_cli call --json_input --json_output $BRIDGE_ADDR DeleteNvmeController "{name : '//storage.opiproject.org/volumes/controller1'}"
+grpc_cli call --json_input --json_output $BRIDGE_ADDR DeleteNvmeSubsystem "{name : '//storage.opiproject.org/volumes/subsystem2'}"
 ```
 
-or manually
+To observe devices on host:
 
-```bash
-docker run --network=host --rm -it namely/grpc-cli ls   --json_input --json_output 10.10.10.10:50051 -l
-docker run --network=host --rm -it namely/grpc-cli call --json_input --json_output 10.10.10.10:50051 CreateNvmeSubsystem "{nvme_subsystem : {spec : {nqn: 'nqn.2022-09.io.spdk:opitest2', serial_number: 'myserial2', model_number: 'mymodel2', max_namespaces: 11} }, nvme_subsystem_id : 'subsystem2' }"
-docker run --network=host --rm -it namely/grpc-cli call --json_input --json_output 10.10.10.10:50051 ListNvmeSubsystems "{parent : 'todo'}"
-docker run --network=host --rm -it namely/grpc-cli call --json_input --json_output 10.10.10.10:50051 GetNvmeSubsystem "{name : '//storage.opiproject.org/volumes/subsystem2'}"
-docker run --network=host --rm -it namely/grpc-cli call --json_input --json_output 10.10.10.10:50051 CreateNvmeController "{nvme_controller : {spec : {nvme_controller_id: 2, subsystem_id : { value : '//storage.opiproject.org/volumes/subsystem2' }, pcie_id : {physical_function : 0}, max_nsq:5, max_ncq:5 } }, nvme_controller_id : 'controller1'}"
-docker run --network=host --rm -it namely/grpc-cli call --json_input --json_output 10.10.10.10:50051 ListNvmeControllers "{parent : '//storage.opiproject.org/volumes/subsystem2'}"
-docker run --network=host --rm -it namely/grpc-cli call --json_input --json_output 10.10.10.10:50051 GetNvmeController "{name : '//storage.opiproject.org/volumes/controller1'}"
-docker run --network=host --rm -it namely/grpc-cli call --json_input --json_output 10.10.10.10:50051 CreateNvmeNamespace "{nvme_namespace : {spec : {subsystem_id : { value : '//storage.opiproject.org/volumes/subsystem2' }, volume_id : { value : 'Malloc0' }, 'host_nsid' : '10', uuid:{value : '1b4e28ba-2fa1-11d2-883f-b9a761bde3fb'}, nguid: '1b4e28ba-2fa1-11d2-883f-b9a761bde3fb', eui64: 1967554867335598546 } }, nvme_namespace_id: 'namespace1'}"
-docker run --network=host --rm -it namely/grpc-cli call --json_input --json_output 10.10.10.10:50051 ListNvmeNamespaces "{parent : '//storage.opiproject.org/volumes/subsystem2'}"
-docker run --network=host --rm -it namely/grpc-cli call --json_input --json_output 10.10.10.10:50051 GetNvmeNamespace "{name : '//storage.opiproject.org/volumes/namespace1'}"
-docker run --network=host --rm -it namely/grpc-cli call --json_input --json_output 10.10.10.10:50051 NvmeNamespaceStats "{namespace_id : {value : '//storage.opiproject.org/volumes/namespace1'} }"
-docker run --network=host --rm -it namely/grpc-cli call --json_input --json_output 10.10.10.10:50051 CreateNVMfRemoteController "{nv_mf_remote_controller : {multipath: 'NVME_MULTIPATH_MULTIPATH'}, nv_mf_remote_controller_id: 'nvmetcp12'}"
-docker run --network=host --rm -it namely/grpc-cli call --json_input --json_output 10.10.10.10:50051 ListNVMfRemoteControllers "{}"
-docker run --network=host --rm -it namely/grpc-cli call --json_input --json_output 10.10.10.10:50051 GetNVMfRemoteController "{name: '//storage.opiproject.org/volumes/nvmetcp12'}"
-docker run --network=host --rm -it namely/grpc-cli call --json_input --json_output 10.10.10.10:50051 CreateNVMfPath "{nv_mf_path : {controller_id: {value: '//storage.opiproject.org/volumes/nvmetcp12'}, traddr:'11.11.11.2', subnqn:'nqn.2016-06.com.opi.spdk.target0', trsvcid:'4444', trtype:'NVME_TRANSPORT_TCP', adrfam:'NVMF_ADRFAM_IPV4', hostnqn:'nqn.2014-08.org.nvmexpress:uuid:feb98abe-d51f-40c8-b348-2753f3571d3c'}, nv_mf_path_id: 'nvmetcp12path0'}"
-docker run --network=host --rm -it namely/grpc-cli call --json_input --json_output 10.10.10.10:50051 ListNVMfPaths "{parent : 'todo'}"
-docker run --network=host --rm -it namely/grpc-cli call --json_input --json_output 10.10.10.10:50051 GetNVMfPath "{name: '//storage.opiproject.org/volumes/nvmetcp12path0'}"
-docker run --network=host --rm -it namely/grpc-cli call --json_input --json_output 10.10.10.10:50051 DeleteNVMfPath "{name: '//storage.opiproject.org/volumes/nvmetcp12path0'}"
-docker run --network=host --rm -it namely/grpc-cli call --json_input --json_output 10.10.10.10:50051 DeleteNVMfRemoteController "{name: '//storage.opiproject.org/volumes/nvmetcp12'}"
-docker run --network=host --rm -it namely/grpc-cli call --json_input --json_output 10.10.10.10:50051 DeleteNvmeNamespace "{name : '//storage.opiproject.org/volumes/namespace1'}"
-docker run --network=host --rm -it namely/grpc-cli call --json_input --json_output 10.10.10.10:50051 DeleteNvmeController "{name : '//storage.opiproject.org/volumes/controller1'}"
-docker run --network=host --rm -it namely/grpc-cli call --json_input --json_output 10.10.10.10:50051 DeleteNvmeSubsystem "{name : '//storage.opiproject.org/volumes/subsystem2'}"
-```
-
-## Recipes
-
-### Prerequisites
-
-#### On Host
-
-TBD
-
-#### On IPU
-
-Allocate all required resources...
-
-```bash
-TBD
-```
-
-Create required transports:
-
-```bash
-/opt/ssa/rpc.py --plugin npi nvmf_create_transport -t NPI --max-queue-depth 4096  --max-io-size 65536 --io-unit-size 4096 --lbads 4096 --log-level ERROR
-/opt/ssa/rpc.py nvmf_create_transport -t TCP
-```
-
-### Create frontend Nvme controllers
-
-#### PF
-
-```bash
-# export BRIDGE_ADDR=10.10.10.10:50051
-grpc_cli --json_input --json_output call $BRIDGE_ADDR CreateNvmeSubsystem "{nvme_subsystem : {spec : {nqn: 'nqn.2022-09.io.spdk:opitest-0.0', serial_number: 'mev-opi-serial', model_number: 'mev-opi-model', max_namespaces: 11} }, nvme_subsystem_id : 'subsystem00' }"
-grpc_cli --json_input --json_output call $BRIDGE_ADDR CreateNvmeController "{nvme_controller : {spec : {nvme_controller_id: 0, subsystem_id : { value : '//storage.opiproject.org/volumes/subsystem00' }, pcie_id : {physical_function : 0, virtual_function : 0}, max_nsq:5, max_ncq:5} }, nvme_controller_id : 'controller0' }"
-```
-
-On Host
+After PF is created
 
 ```bash
 # Bind driver to PF
-# export PF_BDF=<bdf address of pf>
 modprobe nvme
-echo 'nvme' > ./virtfn0/driver_override
+cd /sys/bus/pci/devices/$PF_BDF
+echo 'nvme' > ./driver_override
 echo $PF_BDF > /sys/bus/pci/drivers/nvme/bind
 
-# Allocate resources and prepare to VF creation
-cd /sys/bus/pci/devices/$PF_BDF
+# Allocate resources and prepare for VF creation
 echo 0 > ./sriov_drivers_autoprobe
 echo 4 > ./sriov_numvfs
 ```
 
-#### VF
+After VF is created
 
 ```bash
-grpc_cli --json_input --json_output call $BRIDGE_ADDR CreateNvmeSubsystem "{nvme_subsystem : {spec : {nqn: 'nqn.2022-09.io.spdk:opitest-0.1', serial_number: 'mev-opi-serial', model_number: 'mev-opi-model', max_namespaces: 11} }, nvme_subsystem_id : 'subsystem01' }"
-grpc_cli --json_input --json_output call $BRIDGE_ADDR CreateNvmeController "{nvme_controller : {spec : {nvme_controller_id: 2, subsystem_id : { value : '//storage.opiproject.org/volumes/subsystem01' }, pcie_id : {physical_function : 0, virtual_function : 1}, max_nsq:5, max_ncq:5, max_limit: {rd_iops_kiops: 5}} }, nvme_controller_id : 'controller1' }"
-```
-
-On Host
-
-```bash
+cd /sys/bus/pci/devices/$PF_BDF
 echo 'nvme' > ./virtfn0/driver_override
-# VF_BDF can be found in virtfn<X> where X equals to virtual_function in CreateNvmeController minus 1 e.g.
-# virtio_function: 1 -> virtfn0
 echo $VF_BDF > /sys/bus/pci/drivers/nvme/bind
 ```
 
-### Connect to backend remote Nvme/TCP controller
+Before VF is deleted
 
 ```bash
-# export TARGET_IP=200.1.1.11
-# export TARGET_PORT=4420
-grpc_cli --json_input --json_output call $BRIDGE_ADDR CreateNVMfRemoteController "{nv_mf_remote_controller : {multipath: 'NVME_MULTIPATH_MULTIPATH'}, nv_mf_remote_controller_id: 'nvmetcp12'}"
-grpc_cli --json_input --json_output call $BRIDGE_ADDR CreateNVMfPath "{nv_mf_path: {controller_id: {value: '//storage.opiproject.org/volumes/nvmetcp12'}, traddr:'$TARGET_IP', subnqn:'nqn.2016-06.io.spdk:cnode1', trsvcid:'$TARGET_PORT', trtype:'NVME_TRANSPORT_TCP', adrfam:'NVMF_ADRFAM_IPV4', hostnqn:'nqn.2016-06.io.spdk:cnode1'}, nv_mf_path_id: 'nvmetcp12path0'}"
+cd /sys/bus/pci/devices/$PF_BDF
+echo $VF_BDF > /sys/bus/pci/drivers/nvme/unbind
+echo '(null)' > ./virtfn2/driver_override
 ```
 
-### Create middleend QoS volume
+Before PF is deleted
 
 ```bash
-grpc_cli --json_input --json_output call $BRIDGE_ADDR CreateQosVolume "{'qos_volume' : {'volume_id' : { 'value':'nvmetcp12n1'}, 'max_limit' : { 'rw_iops_kiops': 3 } }, 'qos_volume_id' : 'qosvolume0' }"
-```
-
-### Create middleend Encrypted volume
-
-```bash
-grpc_cli --json_input --json_output call $BRIDGE_ADDR CreateEncryptedVolume "{'encrypted_volume': { 'cipher': 'ENCRYPTION_TYPE_AES_XTS_128', 'volume_id': { 'value': 'nvmetcp12n1'}, 'key': 'MDAwMTAyMDMwNDA1MDYwNzA4MDkwYTBiMGMwZDBlMGY='}, 'encrypted_volume_id': 'encnvmetcp12n1' }"
-```
-
-### Create Namespace
-
-middleend volumes should be created before namespace is created
-
-```bash
-grpc_cli --json_input --json_output call $BRIDGE_ADDR CreateNvmeNamespace "{nvme_namespace : {spec : {subsystem_id : { value : '//storage.opiproject.org/volumes/subsystem01' }, volume_id : { value : 'nvmetcp12n1' }, 'host_nsid' : '5', uuid:{value : '1b4e28ba-2fa1-11d2-883f-b9a761bde3fc'}, nguid: '1b4e28ba-2fa1-11d2-883f-b9a761bde3fc', eui64: 1967554867335598547 } }, nvme_namespace_id: 'namespace1' }"
-```
-
-### Delete Namespace
-
-```bash
-grpc_cli --json_input --json_output call $BRIDGE_ADDR DeleteNvmeNamespace "{name : '//storage.opiproject.org/volumes/namespace1'}"
-```
-
-### Delete middleend Encrypted volume
-
-```bash
-grpc_cli --json_input --json_output call $BRIDGE_ADDR DeleteEncryptedVolume "{'name': '//storage.opiproject.org/volumes/encnvmetcp12n1'}"
-```
-
-### Delete middleend QoS volume
-
-```bash
-grpc_cli --json_input --json_output call $BRIDGE_ADDR DeleteQosVolume "{name : '//storage.opiproject.org/volumes/qosvolume0'}"
-```
-
-### Disconnect from backend remote Nvme/TCP controller
-
-```bash
-grpc_cli --json_input --json_output call $BRIDGE_ADDR DeleteNVMfPath "{name: '//storage.opiproject.org/volumes/nvmetcp12path0'}"
-grpc_cli --json_input --json_output call $BRIDGE_ADDR DeleteNVMfRemoteController "{name: '//storage.opiproject.org/volumes/nvmetcp12'}"
-```
-
-### Delete frontend controllers
-
-On Host
-
-```bash
-# unbind driver from controller
-echo $BDF > /sys/bus/pci/drivers/nvme/unbind
-echo '(null)' > ./virtfn0/driver_override
-```
-
-VF
-
-```bash
-grpc_cli --json_input --json_output call $BRIDGE_ADDR DeleteNvmeController "{name : '//storage.opiproject.org/volumes/controller1'}"
-grpc_cli --json_input --json_output call $BRIDGE_ADDR DeleteNvmeSubsystem "{name : '//storage.opiproject.org/volumes/subsystem01'}"
-```
-
-PF
-
-```bash
-grpc_cli --json_input --json_output call $BRIDGE_ADDR DeleteNvmeController "{name : '//storage.opiproject.org/volumes/controller0'}"
-grpc_cli --json_input --json_output call $BRIDGE_ADDR DeleteNvmeSubsystem "{name : '//storage.opiproject.org/volumes/subsystem00'}"
+cd /sys/bus/pci/devices/$PF_BDF
+echo $PF_BDF > /sys/bus/pci/drivers/nvme/unbind
+echo '(null)' > ./driver_override
 ```
 
 ## I Want To Contribute
