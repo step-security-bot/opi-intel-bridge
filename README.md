@@ -14,12 +14,6 @@
 
 This is a Intel app (bridge) to OPI APIs for storage, inventory, ipsec and networking (future).
 
-## I Want To Contribute
-
-This project welcomes contributions and suggestions.  We are happy to have the Community involved via submission of **Issues and Pull Requests** (with substantive content or even just fixes). We are hoping for the documents, test framework, etc. to become a community process with active engagement.  PRs can be reviewed by by any number of people, and a maintainer may accept.
-
-See [CONTRIBUTING](https://github.com/opiproject/opi/blob/main/CONTRIBUTING.md) and [GitHub Basic Process](https://github.com/opiproject/opi/blob/main/doc-github-rules.md) for more details.
-
 ## Getting started
 
 build like this:
@@ -239,3 +233,9 @@ PF
 grpc_cli --json_input --json_output call $BRIDGE_ADDR DeleteNvmeController "{name : '//storage.opiproject.org/volumes/controller0'}"
 grpc_cli --json_input --json_output call $BRIDGE_ADDR DeleteNvmeSubsystem "{name : '//storage.opiproject.org/volumes/subsystem00'}"
 ```
+
+## I Want To Contribute
+
+This project welcomes contributions and suggestions.  We are happy to have the Community involved via submission of **Issues and Pull Requests** (with substantive content or even just fixes). We are hoping for the documents, test framework, etc. to become a community process with active engagement.  PRs can be reviewed by any number of people, and a maintainer may accept.
+
+See [CONTRIBUTING](https://github.com/opiproject/opi/blob/main/CONTRIBUTING.md) and [GitHub Basic Process](https://github.com/opiproject/opi/blob/main/doc-github-rules.md) for more details.
