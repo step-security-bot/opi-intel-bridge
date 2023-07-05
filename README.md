@@ -1,16 +1,17 @@
 # OPI gRPC to Intel SDK bridge
 
 [![Linters](https://github.com/opiproject/opi-intel-bridge/actions/workflows/linters.yml/badge.svg)](https://github.com/opiproject/opi-intel-bridge/actions/workflows/linters.yml)
+[![CodeQL](https://github.com/opiproject/opi-intel-bridge/actions/workflows/codeql.yml/badge.svg)](https://github.com/opiproject/opi-intel-bridge/actions/workflows/codeql.yml)
 [![tests](https://github.com/opiproject/opi-intel-bridge/actions/workflows/go.yml/badge.svg)](https://github.com/opiproject/opi-intel-bridge/actions/workflows/go.yml)
-[![Docker](https://github.com/opiproject/opi-intel-bridge/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/opiproject/opi-intel-bridge/actions/workflows/docker-publish.yml)
-[![License](https://img.shields.io/github/license/opiproject/opi-intel-bridge?style=flat-square&color=blue&label=License)](https://github.com/opiproject/opi-intel-bridge/blob/master/LICENSE)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/opiproject/opi-intel-bridge/badge)](https://securityscorecards.dev/viewer/?platform=github.com&org=opiproject&repo=opi-intel-bridge)
 [![codecov](https://codecov.io/gh/opiproject/opi-intel-bridge/branch/main/graph/badge.svg)](https://codecov.io/gh/opiproject/opi-intel-bridge)
 [![Go Report Card](https://goreportcard.com/badge/github.com/opiproject/opi-intel-bridge)](https://goreportcard.com/report/github.com/opiproject/opi-intel-bridge)
-[![Go Doc](https://img.shields.io/badge/godoc-reference-blue.svg)](http://godoc.org/github.com/opiproject/opi-intel-bridge)
-[![Pulls](https://img.shields.io/docker/pulls/opiproject/opi-intel-bridge.svg?logo=docker&style=flat&label=Pulls)](https://hub.docker.com/r/opiproject/opi-intel-bridge)
-[![Last Release](https://img.shields.io/github/v/release/opiproject/opi-intel-bridge?label=Latest&style=flat-square&logo=go)](https://github.com/opiproject/opi-intel-bridge/releases)
-[![GitHub stars](https://img.shields.io/github/stars/opiproject/opi-intel-bridge.svg?style=flat-square&label=github%20stars)](https://github.com/opiproject/opi-intel-bridge)
-[![GitHub Contributors](https://img.shields.io/github/contributors/opiproject/opi-intel-bridge.svg?style=flat-square)](https://github.com/opiproject/opi-intel-bridge/graphs/contributors)
+
+[Download 🚀](https://github.com/orgs/opiproject/packages?repo_name=opi-intel-bridge) ·
+[Report issue 🐞](https://github.com/opiproject/opi-intel-bridge/issues/new/choose) ·
+[Contribute 👋](#i-want-to-contribute)
+
+----
 
 This is a Intel app (bridge) to OPI APIs for storage, inventory, ipsec and networking (future).
 
